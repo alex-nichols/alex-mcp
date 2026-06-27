@@ -3,11 +3,12 @@ import { SSEServerTransport } from "@modelcontextprotocol/sdk/server/sse.js";
 import { CallToolRequestSchema, ListToolsRequestSchema } from "@modelcontextprotocol/sdk/types.js";
 import { ToolRegistry } from "./registry.js";
 import express from "express";
+import cors from "cors";
 
 export class MCPServerWrapper {
   private server: Server;
   private registry: ToolRegistry;
-  private app: express.Application;
+  private app: express.Application = express();
   private transport: SSEServerTransport | null = null;
 
   constructor(registry: ToolRegistry) {
@@ -23,7 +24,7 @@ export class MCPServerWrapper {
       }
     );
     this.registry = registry;
-    this.app = express();
+    this.app.use(cors());
     this.setupHandlers();
     this.setupRoutes();
   }
@@ -59,7 +60,7 @@ export class MCPServerWrapper {
   }
 
   private setupRoutes() {
-    this.app.get("/sse", async (req, res) => {
+    this.app.get("/mcp", async (req, res) => {
       this.transport = new SSEServerTransport("/messages", res);
       await this.server.connect(this.transport);
       console.error("SSE connection established");
@@ -74,9 +75,9 @@ export class MCPServerWrapper {
     });
   }
 
-  public async run(port: number = 3000) {
-    this.app.listen(port, () => {
-      console.error(`MCP Server running on http://localhost:${port}/sse`);
+  public async run(port: number = 3030) {
+    this.app.listen(port, '0.0.0.0', () => {
+      console.error(`MCP Server running on http://localhost:${port}/mcp`);
     });
   }
 }
