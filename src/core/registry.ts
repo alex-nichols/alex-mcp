@@ -1,16 +1,15 @@
 import fs from 'fs';
 import path from 'path';
-import { BaseTool } from './base-tool';
 import chokidar from 'chokidar';
 
 export interface ToolConfig {
   tools: {
-    [name: string]: string; // name -> file path
+    [name: string]: string;
   };
 }
 
 export class ToolRegistry {
-  private tools: Map<string, BaseTool<any>> = new Map();
+  private tools: Map<string, any> = new Map();
   private configPath: string;
   private config: ToolConfig;
 
@@ -37,8 +36,10 @@ export class ToolRegistry {
     try {
       const resolvedPath = path.resolve(filePath);
       
-      // Using dynamic import
-      const module: any = await import(resolvedPath);
+      // Remove ?t query for require() 
+      const cleanPath = resolvedPath.replace(/\?.*$/, '');
+      
+      const module: any = require(cleanPath);
       const ToolClass = module.default || module;
       
       if (typeof ToolClass !== 'function') {
@@ -46,10 +47,7 @@ export class ToolRegistry {
       }
 
       const toolInstance = new ToolClass();
-      if (!(toolInstance instanceof BaseTool)) {
-        throw new Error(`Loaded class does not implement BaseTool: ${filePath}`);
-      }
-
+      
       this.tools.set(name, toolInstance);
       console.error(`Successfully loaded tool: ${name} from ${resolvedPath}`);
     } catch (error) {
@@ -77,7 +75,7 @@ export class ToolRegistry {
     await this.reloadAllTools();
   }
 
-  public getTools(): BaseTool<any>[] {
+  public getTools(): any[] {
     return Array.from(this.tools.values());
   }
 

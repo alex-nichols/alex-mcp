@@ -1,5 +1,5 @@
 {
   "tools": {
-    "calculator": "./src/tools/calculator-tool.ts"
+    "calculator": "./src/tools/calculator-tool.js"
   }
 }

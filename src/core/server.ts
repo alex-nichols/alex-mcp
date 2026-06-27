@@ -1,20 +1,18 @@
-import { Server } from "@modelcontextprotocol/sdk/server/index.js";
-import { SSEServerTransport } from "@modelcontextprotocol/sdk/server/sse.js";
-import { CallToolRequestSchema, ListToolsRequestSchema } from "@modelcontextprotocol/sdk/types.js";
+import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import { ToolRegistry } from "./registry.js";
-import express from "express";
-import cors from "cors";
+import { createMcpExpressApp } from "@modelcontextprotocol/sdk/server/express.js";
+import type { Implementation } from "@modelcontextprotocol/sdk/types.js";
 
 export class MCPServerWrapper {
-  private server: Server;
+  private server: McpServer;
   private registry: ToolRegistry;
-  private app: express.Application = express();
-  private transport: SSEServerTransport | null = null;
+  private app = createMcpExpressApp({ host: "0.0.0.0" });
 
   constructor(registry: ToolRegistry) {
-    this.server = new Server(
+    this.server = new McpServer(
       {
-        name: "dynamic-mcp-server",
+        name: "alex-mcp-server",
         version: "1.0.0",
       },
       {
@@ -24,59 +22,50 @@ export class MCPServerWrapper {
       }
     );
     this.registry = registry;
-    this.app.use(cors());
-    this.setupHandlers();
-    this.setupRoutes();
-  }
 
-  private setupHandlers() {
-    this.server.setRequestHandler(ListToolsRequestSchema, async () => {
-      const tools = this.registry.getTools().map((tool) => ({
-        name: tool.name,
-        description: tool.description,
-        inputSchema: (tool.inputSchema as any).shape as any,
-      }));
-
-      return {
-        tools: tools,
-      };
+    const transport = new StreamableHTTPServerTransport({
+      sessionIdGenerator: () => crypto.randomUUID(),
     });
 
-    this.server.setRequestHandler(CallToolRequestSchema, async (request) => {
-      const { name, arguments: args } = request.params;
+    this.setupTools();
 
-      try {
-        const result = await this.registry.executeTool(name, args);
-        return {
-          content: [{ type: "text", text: JSON.stringify(result) }],
-        };
-      } catch (error: any) {
-        return {
-          isError: true,
-          content: [{ type: "text", text: error.message }],
-        };
-      }
+    this.server.connect(transport);
+
+    this.app.post("/mcp", async (req, res) => {
+      await transport.handleRequest(req, res, req.body);
     });
   }
 
-  private setupRoutes() {
-    this.app.get("/mcp", async (req, res) => {
-      this.transport = new SSEServerTransport("/messages", res);
-      await this.server.connect(this.transport);
-      console.error("SSE connection established");
-    });
-
-    this.app.post("/messages", async (req, res) => {
-      if (!this.transport) {
-        res.status(400).send("No active SSE connection");
-        return;
-      }
-      await this.transport.handlePostMessage(req, res);
-    });
+  private setupTools() {
+    const tools = this.registry.getTools();
+    
+    for (const tool of tools) {
+      this.server.registerTool(
+        tool.name,
+        {
+          description: tool.description,
+          inputSchema: tool.inputSchema as any,
+        },
+        async (args: unknown) => {
+          try {
+            const result = await this.registry.executeTool(tool.name, args);
+            return {
+              content: [{ type: "text" as const, text: JSON.stringify(result) }],
+            };
+          } catch (error: unknown) {
+            const errorMessage = error instanceof Error ? error.message : String(error);
+            return {
+              content: [{ type: "text" as const, text: errorMessage }],
+              isError: true,
+            };
+          }
+        }
+      );
+    }
   }
 
   public async run(port: number = 3030) {
-    this.app.listen(port, '0.0.0.0', () => {
+    this.app.listen(port, () => {
       console.error(`MCP Server running on http://localhost:${port}/mcp`);
     });
   }
