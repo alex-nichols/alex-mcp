@@ -1,0 +1,5 @@
+{
+  "tools": {
+    "calculator": "./src/tools/calculator-tool.ts"
+  }
+}
